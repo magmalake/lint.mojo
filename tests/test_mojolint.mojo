@@ -19,6 +19,7 @@ from mojolint import (
     words_of,
 )
 from mojolint.lsp import split_frames
+from mojolint.tokenize import handed_whole
 
 
 def _ids(findings: List[Finding]) -> String:
@@ -293,6 +294,34 @@ def test_l001_with_facts_catches_erasure_through_a_helper() raises:
     assert_true(f[0].message.find("`ctx: OpaquePtr`") >= 0)
     # Text mode cannot see through the helper.
     assert_equal(_ids(lint_source("x.mojo", src)), "")
+
+
+def test_l001_with_facts_ignores_reads_through_a_pointer() raises:
+    # threads.mojo's own worker: `cells` is an aliased untracked pointer
+    # (`I64Ptr`, so not trivially typed by name) whose last use *reads a
+    # cell* into an OpaquePtr. Nothing is handed over; `cells` dying is
+    # meaningless.
+    var src = String(
+        "def worker(arg: OpaquePtr) -> OpaquePtr:\n"
+        "    var cells = i64_ptr(Int(arg))\n"
+        "    var n_tasks = Int(cells[unsafe_offset=1])\n"
+        "    var user_ctx = opaque_ptr(Int(cells[unsafe_offset=2]))\n"
+        "    work(n_tasks, user_ctx)\n"
+        "    return arg\n"
+    )
+    var facts = Facts()
+    facts.available = True
+    facts.local_types["0:cells"] = "I64Ptr"
+    facts.local_uses["0:cells"] = [Pos(2, 8), Pos(3, 22), Pos(4, 34)]
+    facts.local_types["0:user_ctx"] = "OpaquePtr"
+    facts.local_uses["0:user_ctx"] = [Pos(4, 8), Pos(5, 18)]
+    assert_equal(_ids(lint_with_facts("x.mojo", src, facts)), "")
+    assert_true(handed_whole("Ctx[Totals].to(totals).opaque()", "totals"))
+    assert_true(handed_whole("f(a, totals, b)", "totals"))
+    assert_true(handed_whole("totals.as_opaque()", "totals"))
+    assert_false(handed_whole("Int(cells[unsafe_offset=2])", "cells"))
+    assert_false(handed_whole("print(other.totals)", "totals"))
+    assert_false(handed_whole("f(totals_2)", "totals"))
 
 
 def test_l001_with_facts_trusts_resolved_uses_over_text() raises:

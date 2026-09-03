@@ -46,6 +46,37 @@ def _is_ident_char(c: UInt8) -> Bool:
     return _is_ident_start(c) or (c >= 48 and c <= 57)
 
 
+def handed_whole(code: String, name: String) -> Bool:
+    """Does `code` pass the local `name` as a whole value somewhere?
+
+    True when an occurrence of `name` is followed by `)` or `,` (an argument)
+    or `.` (a method call on it). False when it is only read *through*: as
+    the base of `name[...]`, or not present at all. `Ctx.to(totals)` hands
+    `totals`; `Int(cells[unsafe_offset=2])` merely reads a cell of `cells`.
+    """
+    var b = code.as_bytes()
+    var n = len(b)
+    var m = name.byte_length()
+    var i = 0
+    while i + m <= n:
+        var at = code.find(name, i)
+        if at < 0:
+            return False
+        i = at + m
+        if at > 0 and (_is_ident_char(b[at - 1]) or b[at - 1] == 46):
+            continue  # part of a longer name, or a field: `other.totals`
+        if i < n and _is_ident_char(b[i]):
+            continue
+        var j = i
+        while j < n and b[j] == 32:
+            j += 1
+        if j >= n:
+            return False
+        if b[j] == 41 or b[j] == 44 or b[j] == 46:  # ) , .
+            return True
+    return False
+
+
 def words_of(code: String) -> List[String]:
     """The identifier tokens of `code`, in order.
 

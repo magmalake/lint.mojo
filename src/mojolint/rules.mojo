@@ -16,7 +16,7 @@ from .structure import (
     parse_params,
     used_after,
 )
-from .tokenize import Line, logical_lines, words_of
+from .tokenize import Line, handed_whole, logical_lines, words_of
 
 
 @fieldwise_init
@@ -326,11 +326,14 @@ def check_l001(
                     or line.code.find("Int(Pointer(to=" + name + ")") >= 0
                 ):
                     erased = True
+            # `var y = f(x)` where `y` resolves to an untracked pointer: `x`
+            # is handed over whole, not merely read through (`x[i]`).
             if (
                 not erased
                 and len(line.words) >= 2
                 and line.words[0] == "var"
                 and line.words[1] != name
+                and handed_whole(line.code, name)
             ):
                 var bound = facts.local_type(f, line.words[1])
                 if _untracked_type(bound, mod, facts):
