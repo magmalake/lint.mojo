@@ -1,0 +1,28 @@
+[workspace]
+authors = ["Marius S <39998+winding-lines@users.noreply.github.com>"]
+channels = ["https://conda.modular.com/max-nightly", "conda-forge"]
+name = "lint.mojo"
+description = "mojolint — a proof-of-concept source-level linter for the origin and thread-safety patterns the Mojo compiler lets through."
+platforms = ["osx-arm64", "linux-64"]
+version = "0.0.1"
+
+[tasks]
+# Lint one or more files: `pixi run lint path/to/file.mojo …`
+lint = { cmd = "mkdir -p build && mojo build src/mojolint/main.mojo -I src -o build/mojolint && ./build/mojolint" }
+# Unit tests for the tokenizer and the rule matchers.
+test = { cmd = "mkdir -p build && mojo build tests/test_mojolint.mojo -I src -o build/mojolint-test && ./build/mojolint-test" }
+# The corpus: every positive fires exactly its `# lint-expect:` rules, every
+# negative is silent.
+corpus = { cmd = "bash tests/check.sh" }
+check = { depends-on = ["test", "corpus"] }
+fmt = { cmd = "mojo format src tests/test_mojolint.mojo" }
+
+[feature.nightly.dependencies]
+modular = ">=26.6.0.dev2026082605,<27"
+
+[feature.stable.dependencies]
+mojo-compiler = "==1.0.0"
+
+[environments]
+default = ["nightly"]
+stable = ["stable"]
