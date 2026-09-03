@@ -22,6 +22,20 @@ struct Line(Copyable, Movable):
     """Identifier tokens of `code`, in order."""
     var allow: List[String]
     """Rule ids named in a `# lint: allow(...)` comment on or just above it."""
+    var starts: List[Int]
+    """Offset in `code` where each physical line begins; `starts[0]` is 0."""
+    var indents: List[Int]
+    """Leading spaces of each physical line, parallel to `starts`."""
+
+    def locate(self, at: Int) -> Tuple[Int, Int]:
+        """The 1-based physical line and 1-based column of offset `at` in
+        `code`, so a finding on a bracketed continuation points into the
+        physical line it sits on."""
+        var k = 0
+        for j in range(1, len(self.starts)):
+            if self.starts[j] <= at:
+                k = j
+        return (self.lineno + k, self.indents[k] + 1 + at - self.starts[k])
 
     def has_word(self, word: String) -> Bool:
         for w in self.words:
@@ -227,11 +241,17 @@ def logical_lines(source: String) -> List[Line]:
     var pending_allow = List[String]()
     var lineno = 0
     var indent = 0
+    var starts = List[Int]()
+    var indents = List[Int]()
     var idx = 0
     for raw in physical:
         idx += 1
         var line = String(raw)
         var stripped = String(line.strip())
+        var lb = line.as_bytes()
+        var line_indent = 0
+        while line_indent < len(lb) and lb[line_indent] == 32:
+            line_indent += 1
         # A blanked string literal on a line of its own — a docstring's opener
         # or closer, whose indent is gone — is not code.
         if _only_quotes(stripped):
@@ -248,15 +268,17 @@ def logical_lines(source: String) -> List[Line]:
                         pending_allow.append(String(id))
                 continue
             lineno = idx
-            indent = 0
-            var lb = line.as_bytes()
-            while indent < len(lb) and lb[indent] == 32:
-                indent += 1
+            indent = line_indent
             code = stripped
+            starts = [0]
+            indents = [indent]
             allow = pending_allow^
             pending_allow = List[String]()
         else:
-            code += " " + stripped
+            code += " "
+            starts.append(code.byte_length())
+            indents.append(line_indent)
+            code += stripped
         for id in line_allow.split(","):
             if String(id).byte_length() > 0:
                 allow.append(String(id))
@@ -267,6 +289,16 @@ def logical_lines(source: String) -> List[Line]:
                 depth -= 1
         if depth <= 0:
             depth = 0
-            out.append(Line(lineno, indent, code, words_of(code), allow^))
+            out.append(
+                Line(
+                    lineno,
+                    indent,
+                    code,
+                    words_of(code),
+                    allow^,
+                    starts.copy(),
+                    indents.copy(),
+                )
+            )
             allow = List[String]()
     return out^

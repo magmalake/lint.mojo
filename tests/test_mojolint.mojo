@@ -71,6 +71,13 @@ def test_bracketed_continuations_join_into_one_line() raises:
     assert_equal(lines[1].lineno, 2)
     assert_equal(lines[1].code, "foo( a, [b, c], )")
     assert_equal(lines[2].lineno, 6)
+    # Offsets into the joined code map back to the physical line they sit on.
+    var foo = lines[1].locate(lines[1].code.find("foo"))
+    assert_equal(foo[0], 2)
+    assert_equal(foo[1], 5)
+    var c = lines[1].locate(lines[1].code.find("c]"))
+    assert_equal(c[0], 4)
+    assert_equal(c[1], 13)
 
 
 def test_allow_comment_on_line_and_on_previous_line() raises:

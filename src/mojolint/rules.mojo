@@ -183,9 +183,10 @@ def _is_field_path(text: String) -> Bool:
     return True
 
 
-def _col(line: Line, needle: String) -> Int:
+def _where(line: Line, needle: String) -> Tuple[Int, Int]:
+    """The physical line and 1-based column of `needle` in `line`."""
     var at = line.code.find(needle)
-    return line.indent + 1 + (at if at >= 0 else 0)
+    return line.locate(at if at >= 0 else 0)
 
 
 def _line_at(lines: List[Line], f: Func, at: Pos) -> Int:
@@ -282,11 +283,12 @@ def check_l001(
                     and _erases_to_untracked(line.code)
                     and (is_local or f.is_param(name))
                 ):
+                    var at = _where(line, "Pointer(to=")
                     out.append(
                         Finding(
                             path,
-                            line.lineno,
-                            _col(line, "Pointer(to="),
+                            at[0],
+                            at[1],
                             "L001",
                             "the address of `"
                             + name
@@ -348,10 +350,11 @@ def _dies_here(path: String, line: Line, name: String, into: String) -> Finding:
     var how = String("is erased to an untracked pointer here")
     if into.byte_length() > 0:
         how = "is handed to " + into + ", an untracked pointer to it,"
+    var at = _where(line, name)
     return Finding(
         path,
-        line.lineno,
-        _col(line, name),
+        at[0],
+        at[1],
         "L001",
         "`"
         + name
@@ -424,11 +427,12 @@ def check_l002(
                                 or _line_at(lines, f, last.value()) != j
                             ):
                                 continue
+                        var at = _where(l, needle)
                         out.append(
                             Finding(
                                 path,
-                                l.lineno,
-                                _col(l, needle),
+                                at[0],
+                                at[1],
                                 "L002",
                                 "`"
                                 + needle
@@ -504,11 +508,12 @@ def check_l003(
             var rest = String(target[byte=cut:])
             var field = String(rest.removesuffix("[]"))
             if _is_field_path(field):
+                var at = _where(l, target)
                 out.append(
                     Finding(
                         path,
-                        l.lineno,
-                        _col(l, target),
+                        at[0],
+                        at[1],
                         "L003",
                         "plain store to `"
                         + target
