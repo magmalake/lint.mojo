@@ -1,10 +1,13 @@
 # lint.mojo
 
-A proof of concept: a source-level linter for the origin and threading mistakes
-the Mojo compiler accepts and gets wrong — the `uncaught` programs in
-`threads.example`. It reads Mojo as text (logical lines, indentation-recovered
-functions and structs), does no dataflow, and stays silent on the correct
-programs next to those cases. Local-only; nothing here is published.
+A proof of concept: a linter for the origin and threading mistakes the Mojo
+compiler accepts and gets wrong — the `uncaught` programs in `threads.example`.
+It reads Mojo as text (logical lines, indentation-recovered functions and
+structs), does no dataflow, and stays silent on the correct programs next to
+those cases. With `--lsp` it asks `mojo-lsp-server` — the compiler's own
+frontend — for the facts the text cannot give: resolved types and name-resolved
+uses. All Mojo, no C++, no compiler build. Local-only; nothing here is
+published.
 
 ## Rules
 
@@ -36,6 +39,53 @@ only; any subscripted target (`s.cells[i]`) is assumed a per-task slot, so
 
 Silence a line with `# lint: allow(L001)` on it or on the line above.
 
+## `--lsp`: the compiler's facts behind the same rules
+
+`mojolint --lsp [-I DIR]... FILE` runs `mojo-lsp-server` once per file (it
+ships in the `mojo` conda package, stable and nightly) and feeds three kinds of
+fact into the rules:
+
+| fact | LSP request | replaces |
+|---|---|---|
+| resolved type of every `var` local and struct field | `textDocument/hover` | spelling checks (`MutUntrackedOrigin` in the text); aliases and helpers now count |
+| every name-resolved use of a local | `textDocument/references` | "mentioned again" — the same word in another scope, a field name or a `for` variable no longer counts |
+| resolved signature of every function | `hover` on the `def` | task shape read from the header text |
+
+What changes per rule:
+
+- **L001** decides "last use" from references, not text, and fires when the
+  statement holding that last use binds a value whose *resolved* type is an
+  untracked pointer or a struct of this file wrapping one. So
+  `var ctx = Ctx[Totals].to(totals).opaque()` is reported at the call site
+  (`totals` is handed to `ctx: OpaquePtr`), not just inside the helper — the
+  first tier-1 limit above, gone. Locals of trivially-destroyed types (`Int`,
+  `Pointer`, `SIMD`, …) never fire.
+- **L002** finds owners by type (`var t = make()` counts), reads the field's
+  resolved type, and only fires when the `owner.field[]` sits on the owner's
+  last use — the actual condition, not every deref.
+- **L003** reads the task shape from the resolved signature, so
+  `p: Ctx` where `Ctx` is an alias of `OpaquePtr` is a task.
+
+The client (`src/mojolint/lsp.mojo`) is a batch, not a session: the server's
+`--mojo-test` mode reads `// -----`-delimited JSON-RPC from stdin, runs
+single-threaded, and answers everything before honouring `shutdown`. So
+`mojolint` queues `initialize`/`didOpen`/every `hover` and `references` it
+wants/`shutdown`, writes the batch to a file, runs the server once with stdin
+redirected (`std.subprocess.run`), and parses the `Content-Length`-framed
+replies with its own small JSON reader (`src/mojolint/json.mojo`; the std has
+none). About half a second per file with `std` loaded. Parse errors in the
+file (missing imports, `-I` not given) are reported as a `note:` and the rules
+fall back to text for whatever fact is missing.
+
+What `--lsp` still does not give: destruction points. "Last use" is the last
+*textual position* the compiler resolves to the name, which is what ASAP
+destruction keys on in straight-line code but not across loops and branches
+(a use inside a loop body is "before" a use after the loop, textually and in
+fact; a use in one branch and an erasure in the other is textual order only).
+That, and the diagnostic itself, is what
+[modular/modular#7076](https://github.com/modular/modular/issues/7076) asks
+the compiler for.
+
 ## Corpus
 
 | file (`tests/corpus/`) | source | result |
@@ -48,44 +98,39 @@ Silence a line with `# lint: allow(L001)` on it or on the line above.
 | `negative/parallel.mojo` | threads.mojo `src/threads/parallel.mojo` | silent |
 | `negative/test_threads.mojo` | threads.mojo `tests/test_threads.mojo` | silent |
 
-Each positive fires exactly its `# lint-expect:` set. 7/7 corpus and 13/13 unit
-tests on Mojo 1.0.0 stable and on nightly.
+Each positive fires exactly its `# lint-expect:` set, in text mode and in
+`--lsp` mode; in `--lsp` mode `untracked_ctx_drops_early` additionally reports
+the call site. 14/14 corpus and 21/21 unit tests on Mojo 1.0.0 stable and on
+nightly.
 
-    pixi run check                 # unit tests + corpus (nightly); -e stable for 1.0.0
-    pixi run lint FILE.mojo ...    # path:line:col: L00N message; exit 1 on findings
-    pixi run fmt                   # nightly only; stable ships no formatter
+    pixi run check                      # unit tests + corpus, both modes (nightly); -e stable for 1.0.0
+    pixi run lint FILE.mojo ...         # path:line:col: L00N message; exit 1 on findings
+    pixi run lint-lsp -I DIR FILE.mojo  # same, with mojo-lsp-server behind the rules
+    pixi run fmt                        # nightly only; stable ships no formatter
 
-## Two tiers toward `shelf lint`
+## Three tiers toward `shelf lint`
 
-**Tier 1 — this POC, now.** Pattern lints over source text: no compiler
+**Tier 1 — text, now.** Pattern lints over source text: no compiler
 dependency, milliseconds per file, allow-comments as the escape hatch, run by
 `shelf lint` or a pre-commit hook. It covers the four known-bad programs and any
-that spell the same idioms the same way. It cannot cover erasure through a
-helper or a second variable (L001, L002), view types versus raw escapes (L001),
-task shapes not visible in the signature, or stores through methods and shared
-subscripts (L003).
+that spell the same idioms the same way.
 
-**Tier 2 — dataflow lints on the open compiler.** The compiler is open source
+**Tier 2 — `--lsp`, now.** The same rules with the frontend's types and
+references, at the cost of `mojo-lsp-server` on `PATH` and ~0.5 s per file.
+This is as far as a tool *outside* the compiler can go: the LSP exposes what
+the parser resolved, not what `CheckLifetimes.cpp` decided.
+
+**Tier 3 — the compiler.** The compiler is open source
 ([modular/modular](https://github.com/modular/modular), Apache 2.0 w/ LLVM
-exceptions). Its diagnostic surface
-([`DiagnosticOptions.td`](https://github.com/modular/modular/blob/main/Mojo/tools/mojo/Common/DiagnosticOptions.td))
-is `-Werror`/`-Wno-error`, `--disable-warnings`, `--warn-on-unstable-apis`,
-`--ignore-deprecated NAME` and an experimental clang-tidy-style fix-it export;
-there is no per-warning `-W<name>` family, no diagnostics registry, and no
-`lint` subcommand (the [driver](https://github.com/modular/modular/blob/main/Mojo/tools/mojo/mojo.cpp)
-registers build, demangle, doc, format, precompile, repl, debug, run). Lifetime
-warnings come from
-[`CheckLifetimes.cpp`](https://github.com/modular/modular/blob/main/Mojo/lib/LowerLIT/CheckLifetimes.cpp),
-which already knows every ASAP-destruction point. Two routes, not exclusive:
-upstream a rule as a compiler warning (bringing a `-W` family with it;
-contributions open end of 2026), or a lint pass linked against the open frontend
-that `shelf lint` runs after tier 1. With real destruction points and origins,
-L001 becomes exact (referent destroyed before the pointer's last use, helper or
-not), L002 drops the `var x = S(` heuristic (any copy of an untracked field out
-of a value with a destructor, dereferenced past its last use), and L003 follows
-state through method calls — but deciding which stores race at all needs a
-`Sync`-like notion the language lacks, so L003 stays a lint.
-
-Of the three, L001 belongs upstream as a compiler warning: it is nothing but
-ASAP destruction meeting an origin-erasing cast, both already visible to
-`CheckLifetimes.cpp`.
+exceptions), but its parser is not a library that hands out a syntax tree: it
+parses and emits LIT-dialect MLIR in one pass, and expression nodes are
+transient. The reusable entry points are `MojoTooling`'s `MojoParserContext`
+(`parseFile` → a module of LIT IR with origins and locations) — the same path
+`kgen` and the LSP use. A lint pass over that IR is a C++ tool built from the
+Bazel tree, and for L001 it is exactly the warning #7076 requests, which
+belongs in `CheckLifetimes.cpp` (the pass that already knows every ASAP
+destruction point) behind an opt-in flag like the existing
+`--diagnose-missing-doc-strings` in
+[`DiagnosticOptions.td`](https://github.com/modular/modular/blob/main/Mojo/tools/mojo/Common/DiagnosticOptions.td).
+L002 and L003 stay lints: deciding which stores race needs a `Sync`-like
+notion the language lacks.

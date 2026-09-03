@@ -9,9 +9,11 @@ version = "0.0.1"
 [tasks]
 # Lint one or more files: `pixi run lint path/to/file.mojo …`
 lint = { cmd = "mkdir -p build && mojo build src/mojolint/main.mojo -I src -o build/mojolint && ./build/mojolint" }
+# Same, with `mojo-lsp-server` behind the rules: `pixi run lint-lsp -I DIR FILE …`
+lint-lsp = { cmd = "mkdir -p build && mojo build src/mojolint/main.mojo -I src -o build/mojolint && ./build/mojolint --lsp" }
 # Unit tests for the tokenizer and the rule matchers.
 test = { cmd = "mkdir -p build && mojo build tests/test_mojolint.mojo -I src -o build/mojolint-test && ./build/mojolint-test" }
-# The corpus: every positive fires exactly its `# lint-expect:` rules, every
+# The corpus, in text mode and in `--lsp` mode: every positive fires exactly its `# lint-expect:` rules, every
 # negative is silent.
 corpus = { cmd = "bash tests/check.sh" }
 check = { depends-on = ["test", "corpus"] }
@@ -21,7 +23,7 @@ fmt = { cmd = "mojo format src tests/test_mojolint.mojo" }
 modular = ">=26.6.0.dev2026082605,<27"
 
 [feature.stable.dependencies]
-mojo-compiler = "==1.0.0"
+mojo = "==1.0.0"
 
 [environments]
 default = ["nightly"]

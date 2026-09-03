@@ -4,13 +4,21 @@ inline program. The corpus in `tests/corpus` is the end-to-end check."""
 from std.testing import TestSuite, assert_equal, assert_false, assert_true
 
 from mojolint import (
+    Facts,
     Finding,
+    Pos,
+    hover_signature,
+    hover_type,
+    json_quote,
     lint_source,
+    lint_with_facts,
     logical_lines,
+    parse_json,
     parse_module,
     parse_params,
     words_of,
 )
+from mojolint.lsp import split_frames
 
 
 def _ids(findings: List[Finding]) -> String:
@@ -206,6 +214,144 @@ def test_l003_fires_on_plain_store_not_on_atomic_or_own_slot() raises:
     assert_equal(f[0].line, 3)
     assert_equal(f[1].line, 5)
     assert_equal(f[2].line, 8)
+
+
+# ── json and lsp framing ─────────────────────────────────────────────────────
+
+
+def test_json_reads_nested_values_and_escapes() raises:
+    var d = parse_json(
+        '{"id": 7, "result": {"contents": {"value": "a\\nb \\"q\\" \\u00e9"}},'
+        ' "arr": [1, true, null, {"k": []}]}'
+    )
+    assert_equal(d.int(d.get(0, "id")), 7)
+    assert_equal(
+        d.string(d.get(d.get(d.get(0, "result"), "contents"), "value")),
+        'a\nb "q" é',
+    )
+    var arr = d.get(0, "arr")
+    assert_equal(d.count(arr), 4)
+    assert_true(d.is_null(d.at(arr, 2)))
+    assert_equal(d.count(d.get(d.at(arr, 3), "k")), 0)
+    assert_equal(d.get(0, "missing"), -1)
+    assert_equal(d.int(d.get(0, "missing")), -1)
+    assert_equal(d.string(d.get(0, "id")), "")
+
+
+def test_json_quote_round_trips() raises:
+    var text = String('def f():\n    return "x\\y"\t# é')
+    var d = parse_json(json_quote(text))
+    assert_equal(d.string(0), text)
+
+
+def test_frames_are_split_by_content_length() raises:
+    var stream = String(
+        'Content-Length: 13\r\n\r\n{"id": 1234}\nContent-Length: 2\r\n\r\n{}'
+    )
+    var frames = split_frames(stream)
+    assert_equal(len(frames), 2)
+    assert_equal(frames[0], '{"id": 1234}\n')
+    assert_equal(frames[1], "{}")
+
+
+def test_hover_lines_yield_type_and_signature() raises:
+    assert_equal(
+        hover_type("(variable) var t: Pointer[Totals, MutUntrackedOrigin]"),
+        "Pointer[Totals, MutUntrackedOrigin]",
+    )
+    assert_equal(hover_type("(argument) mut t: Totals"), "Totals")
+    assert_equal(hover_type("(function) def f()"), "")
+    assert_equal(
+        hover_signature("(function) def task(i: Int, mut t: Totals)"),
+        "def task(i: Int, mut t: Totals)",
+    )
+    assert_equal(hover_signature("(variable) var x: Int"), "")
+
+
+# ── rules with facts ─────────────────────────────────────────────────────────
+
+
+def test_l001_with_facts_catches_erasure_through_a_helper() raises:
+    var src = String(
+        "struct Ctx[T: AnyType]:\n"
+        "    var _ptr: Pointer[Self.T, MutUntrackedOrigin]\n"
+        "def main() raises:\n"
+        "    var totals = Totals()\n"
+        "    var ctx = Ctx[Totals].to(totals).opaque()\n"
+        "    parallel_for[task](1000, ctx)\n"
+    )
+    # Logical line 2 (index) is `def main`; its locals are keyed by that.
+    var facts = Facts()
+    facts.available = True
+    facts.local_types["2:totals"] = "Totals"
+    facts.local_types["2:ctx"] = "OpaquePtr"
+    facts.local_uses["2:totals"] = [Pos(4, 8), Pos(5, 29)]
+    facts.local_uses["2:ctx"] = [Pos(5, 8), Pos(6, 29)]
+    var f = lint_with_facts("x.mojo", src, facts)
+    assert_equal(_ids(f), "L001")
+    assert_equal(f[0].line, 5)
+    assert_true(f[0].message.find("`ctx: OpaquePtr`") >= 0)
+    # Text mode cannot see through the helper.
+    assert_equal(_ids(lint_source("x.mojo", src)), "")
+
+
+def test_l001_with_facts_trusts_resolved_uses_over_text() raises:
+    var src = String(
+        "def main() raises:\n"
+        "    var totals = Totals()\n"
+        "    var ptr = opaque_ptr(Int(Pointer(to=totals)))\n"
+        "    parallel_for[task](1000, ptr)\n"
+        "    print(other.totals)\n"
+    )
+    # Text mode: `totals` appears on line 5, so it is "used after". The
+    # compiler says line 5 is a different name.
+    assert_equal(_ids(lint_source("x.mojo", src)), "")
+    var facts = Facts()
+    facts.available = True
+    facts.local_types["0:totals"] = "Totals"
+    facts.local_uses["0:totals"] = [Pos(2, 8), Pos(3, 40)]
+    facts.local_types["0:ptr"] = "OpaquePtr"
+    facts.local_uses["0:ptr"] = [Pos(3, 8), Pos(4, 29)]
+    var f = lint_with_facts("x.mojo", src, facts)
+    assert_equal(_ids(f), "L001")
+    assert_equal(f[0].line, 3)
+    # And a trivially-destroyed local is never worth a warning.
+    facts.local_types["0:totals"] = "Int"
+    assert_equal(_ids(lint_with_facts("x.mojo", src, facts)), "")
+
+
+def test_l002_with_facts_needs_the_deref_on_the_last_use() raises:
+    var src = String(
+        "struct Totals(Movable):\n"
+        "    var cell: Pointer[Int64, MutUntrackedOrigin]\n"
+        "    def __deinit__(deinit self):\n"
+        "        self.cell[] = -1\n"
+        "def main() raises:\n"
+        "    var totals = make()\n"
+        "    print(totals.cell[])\n"
+        "    print(totals.cell[])\n"
+    )
+    # Text mode: no `var totals = Totals(`, so no owner, silent.
+    assert_equal(_ids(lint_source("x.mojo", src)), "")
+    var facts = Facts()
+    facts.available = True
+    facts.local_types["4:totals"] = "Totals"
+    facts.local_uses["4:totals"] = [Pos(6, 8), Pos(7, 10), Pos(8, 10)]
+    facts.field_types["Totals.cell"] = "Pointer[Int64, MutUntrackedOrigin]"
+    var f = lint_with_facts("x.mojo", src, facts)
+    assert_equal(_ids(f), "L002")
+    assert_equal(f[0].line, 8)
+
+
+def test_l003_with_facts_sees_task_shape_through_aliases() raises:
+    var src = String("def task(i: Int, p: Ctx) -> None:\n    p[].sum = 0\n")
+    assert_equal(_ids(lint_source("x.mojo", src)), "")
+    var facts = Facts()
+    facts.available = True
+    facts.signatures[
+        "0"
+    ] = "def task(i: Int, p: Pointer[UInt8, MutUntrackedOrigin])"
+    assert_equal(_ids(lint_with_facts("x.mojo", src, facts)), "L003")
 
 
 def main() raises:

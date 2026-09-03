@@ -3,12 +3,17 @@ recovered structure, returning `Finding`s. `RULES` is the table the CLI and
 the corpus harness read; add an entry and a branch in `run_rule` for L004.
 """
 
+from .facts import Facts
+from .lsp import Pos
 from .structure import (
     Func,
     Module,
+    Param,
+    Struct,
     has_local,
     locals_of,
     parse_module,
+    parse_params,
     used_after,
 )
 from .tokenize import Line, logical_lines, words_of
@@ -183,10 +188,70 @@ def _col(line: Line, needle: String) -> Int:
     return line.indent + 1 + (at if at >= 0 else 0)
 
 
+def _line_at(lines: List[Line], f: Func, at: Pos) -> Int:
+    """Index of the logical line of `f` holding physical position `at`, or -1.
+
+    A logical line runs from its first physical line up to the line before
+    the next logical line starts."""
+    for j in range(f.body_start, f.body_end):
+        var end = lines[j + 1].lineno if j + 1 < len(lines) else at.line + 1
+        if at.line >= lines[j].lineno and at.line < end:
+            return j
+    return -1
+
+
+def _base_type(type: String) -> String:
+    """`Ctx[Totals]` → `Ctx`; `Pointer[T, O]` → `Pointer`."""
+    var at = type.find("[")
+    return String(type[byte=0:at]) if at >= 0 else type
+
+
+def _is_trivial(type: String) -> Bool:
+    """A type whose destruction cannot matter: no destructor, no memory."""
+    var base = _base_type(type)
+    if (
+        base == "Pointer"
+        or base == "UnsafePointer"
+        or base == "OpaquePtr"
+        or base == "SIMD"
+        or base == "Scalar"
+    ):
+        return True
+    comptime scalars = (
+        "Int UInt Bool Float16 Float32 Float64 Int8 Int16 Int32 Int64 UInt8"
+        " UInt16 UInt32 UInt64 IntLiteral FloatLiteral"
+    )
+    for w in words_of(scalars):
+        if w == base:
+            return True
+    return False
+
+
+def _untracked_type(type: String, mod: Module, facts: Facts) -> Bool:
+    """Is `type` an untracked pointer, or a struct of this file wrapping one?
+
+    `Pointer[T, MutUntrackedOrigin]` and `OpaquePtr` are; so is a struct such
+    as `Ctx[T]` whose fields (resolved when the facts have them) are."""
+    if type.find("UntrackedOrigin") >= 0 or type.find("OpaquePtr") >= 0:
+        return True
+    var s = mod.struct_named(_base_type(type))
+    if not s:
+        return False
+    for fld in s.value().fields:
+        var ft = facts.field_type(s.value(), fld.name)
+        if ft.byte_length() == 0:
+            ft = fld.type
+        if ft.find("UntrackedOrigin") >= 0 or ft.find("OpaquePtr") >= 0:
+            return True
+    return False
+
+
 # ── L001 ─────────────────────────────────────────────────────────────────────
 
 
-def check_l001(path: String, lines: List[Line], mod: Module) -> List[Finding]:
+def check_l001(
+    path: String, lines: List[Line], mod: Module, facts: Facts
+) -> List[Finding]:
     """`Pointer(to=x)` erased to an untracked or opaque pointer, where either
 
     - the line is a `return`: the untracked pointer leaves the function while
@@ -197,6 +262,11 @@ def check_l001(path: String, lines: List[Line], mod: Module) -> List[Finding]:
     An erased pointer passed as an argument to a call, from a parameter, is
     fine — a parameter is alive for the whole call, joins included — which is
     how the library's own typed `parallel_for` looks, and why it is silent.
+
+    With facts, the second case is decided by the compiler: the last
+    name-resolved use of `x`, and whether the line binds a value whose
+    resolved type is an untracked pointer or a struct wrapping one — so
+    `var ctx = Ctx.to(x)` is caught at the call, not inside the helper.
     """
     var out = List[Finding]()
     for f in mod.funcs:
@@ -227,105 +297,178 @@ def check_l001(path: String, lines: List[Line], mod: Module) -> List[Finding]:
                         )
                     )
                 elif (
-                    is_local
+                    not facts.available
+                    and is_local
                     and (
                         _erases_to_untracked(line.code)
                         or line.code.find("Int(Pointer(to=" + name + ")") >= 0
                     )
                     and not used_after(lines, f, j, name)
                 ):
-                    out.append(
-                        Finding(
-                            path,
-                            line.lineno,
-                            _col(line, "Pointer(to="),
-                            "L001",
-                            "`"
-                            + name
-                            + "` is erased to an untracked pointer here and"
-                            " never used again, so it is destroyed on this"
-                            " line — before anything reads the pointer; pass"
-                            " it by `ref` instead, or use it after",
-                        )
-                    )
+                    out.append(_dies_here(path, line, name, String()))
+        if not facts.available:
+            continue
+        for name in locals_of(lines, f):
+            var last = facts.last_use(f, name)
+            if not last or _is_trivial(facts.local_type(f, name)):
+                continue
+            var j = _line_at(lines, f, last.value())
+            if j < 0:
+                continue
+            ref line = lines[j]
+            if line.allows("L001") or line.words[0] == "return":
+                continue
+            var erased = False
+            var into = String()
+            for target in _pointer_to_targets(line.code):
+                if target == name and (
+                    _erases_to_untracked(line.code)
+                    or line.code.find("Int(Pointer(to=" + name + ")") >= 0
+                ):
+                    erased = True
+            if (
+                not erased
+                and len(line.words) >= 2
+                and line.words[0] == "var"
+                and line.words[1] != name
+            ):
+                var bound = facts.local_type(f, line.words[1])
+                if _untracked_type(bound, mod, facts):
+                    erased = True
+                    into = "`" + line.words[1] + ": " + bound + "`"
+            if erased:
+                out.append(_dies_here(path, line, name, into))
     return out^
+
+
+def _dies_here(path: String, line: Line, name: String, into: String) -> Finding:
+    var how = String("is erased to an untracked pointer here")
+    if into.byte_length() > 0:
+        how = "is handed to " + into + ", an untracked pointer to it,"
+    return Finding(
+        path,
+        line.lineno,
+        _col(line, name),
+        "L001",
+        "`"
+        + name
+        + "` "
+        + how
+        + " and never used again, so it is destroyed on this line — before"
+        " anything reads the pointer; pass it by `ref` instead, or use it"
+        " after",
+    )
 
 
 # ── L002 ─────────────────────────────────────────────────────────────────────
 
 
-def check_l002(path: String, lines: List[Line], mod: Module) -> List[Finding]:
+def check_l002(
+    path: String, lines: List[Line], mod: Module, facts: Facts
+) -> List[Finding]:
     """A struct with `__deinit__`/`__del__` and an untracked pointer field,
     dereferenced as `local.field[]` from outside its methods.
 
     `local.field[]` copies the pointer out and, if that is `local`'s last
     use, the destructor runs between the copy and the deref. A method borrows
     the whole struct for the call; so does `OwnedPointer.__getitem__`.
+
+    With facts, the field's type is the resolved one, the owners are every
+    local whose resolved type is the struct (however it was built), and the
+    deref must sit on the owner's last use.
     """
     var out = List[Finding]()
     for s in mod.structs:
         if not s.has_deinit:
             continue
         for fld in s.fields:
+            var type = facts.field_type(s, fld.name)
+            if type.byte_length() == 0:
+                type = fld.type
             if not (
-                fld.type.find("Pointer[") >= 0
-                and fld.type.find("MutUntrackedOrigin") >= 0
+                type.find("Pointer[") >= 0 and type.find("UntrackedOrigin") >= 0
             ):
                 continue
             for f in mod.funcs:
                 if f.owner == s.name:
                     continue
                 var owners = List[String]()
-                for j in range(f.body_start, f.body_end):
-                    ref l = lines[j]
-                    if (
-                        len(l.words) >= 2
-                        and l.words[0] == "var"
-                        and l.code.find("= " + s.name + "(") >= 0
-                    ):
-                        owners.append(l.words[1])
+                if facts.available:
+                    for name in locals_of(lines, f):
+                        if _base_type(facts.local_type(f, name)) == s.name:
+                            owners.append(name)
+                else:
+                    for j in range(f.body_start, f.body_end):
+                        ref l = lines[j]
+                        if (
+                            len(l.words) >= 2
+                            and l.words[0] == "var"
+                            and l.code.find("= " + s.name + "(") >= 0
+                        ):
+                            owners.append(l.words[1])
                 for j in range(f.body_start, f.body_end):
                     ref l = lines[j]
                     if l.allows("L002"):
                         continue
                     for owner in owners:
                         var needle = owner + "." + fld.name + "[]"
-                        if l.code.find(needle) >= 0:
-                            out.append(
-                                Finding(
-                                    path,
-                                    l.lineno,
-                                    _col(l, needle),
-                                    "L002",
-                                    "`"
-                                    + needle
-                                    + "` copies the untracked pointer out of `"
-                                    + s.name
-                                    + "` and dereferences it after `"
-                                    + owner
-                                    + "`'s last use; read it through a method,"
-                                    " or hold it in an `OwnedPointer`",
-                                )
+                        if l.code.find(needle) < 0:
+                            continue
+                        if facts.available:
+                            var last = facts.last_use(f, owner)
+                            if (
+                                not last
+                                or _line_at(lines, f, last.value()) != j
+                            ):
+                                continue
+                        out.append(
+                            Finding(
+                                path,
+                                l.lineno,
+                                _col(l, needle),
+                                "L002",
+                                "`"
+                                + needle
+                                + "` copies the untracked pointer out of `"
+                                + s.name
+                                + "` and dereferences it after `"
+                                + owner
+                                + "`'s last use; read it through a method,"
+                                " or hold it in an `OwnedPointer`",
                             )
+                        )
     return out^
 
 
 # ── L003 ─────────────────────────────────────────────────────────────────────
 
 
-def _task_shape(f: Func) -> String:
+def _task_params(f: Func, facts: Facts) -> List[Param]:
+    """`f`'s parameters, from the resolved signature when there is one."""
+    var sig = facts.signature(f)
+    if sig.byte_length() > 0:
+        return parse_params(sig)
+    return f.params.copy()
+
+
+def _task_shape(params: List[Param], facts: Facts) -> String:
     """`typed` for `(i: Int, mut t: T)`, `opaque` for `(i: Int, p: OpaquePtr)`,
-    empty otherwise."""
-    if len(f.params) != 2 or f.params[0].type != "Int":
+    empty otherwise. With facts the parameter types are the resolved ones, so
+    an alias of `OpaquePtr` or a `Pointer[UInt8, MutUntrackedOrigin]` spelled
+    out both count as opaque."""
+    if len(params) != 2 or params[0].type != "Int":
         return String()
-    if f.params[1].conv == "mut":
+    if params[1].conv == "mut":
         return String("typed")
-    if f.params[1].type == "OpaquePtr":
+    var t = params[1].type
+    if t == "OpaquePtr" or (facts.available and t.find("UntrackedOrigin") >= 0):
         return String("opaque")
     return String()
 
 
-def check_l003(path: String, lines: List[Line], mod: Module) -> List[Finding]:
+def check_l003(
+    path: String, lines: List[Line], mod: Module, facts: Facts
+) -> List[Finding]:
     """A plain store to shared state inside a task-shaped function.
 
     Fires on `t.field = …` (typed shape) and `p[].field = …` (any shape). A
@@ -334,10 +477,11 @@ def check_l003(path: String, lines: List[Line], mod: Module) -> List[Finding]:
     """
     var out = List[Finding]()
     for f in mod.funcs:
-        var shape = _task_shape(f)
+        var params = _task_params(f, facts)
+        var shape = _task_shape(params, facts)
         if shape.byte_length() == 0:
             continue
-        var state = f.params[1].name
+        var state = params[1].name
         for j in range(f.body_start, f.body_end):
             ref l = lines[j]
             if l.allows("L003"):
@@ -377,24 +521,32 @@ def check_l003(path: String, lines: List[Line], mod: Module) -> List[Finding]:
 
 
 def run_rule(
-    id: String, path: String, lines: List[Line], mod: Module
+    id: String, path: String, lines: List[Line], mod: Module, facts: Facts
 ) -> List[Finding]:
     if id == "L001":
-        return check_l001(path, lines, mod)
+        return check_l001(path, lines, mod, facts)
     if id == "L002":
-        return check_l002(path, lines, mod)
+        return check_l002(path, lines, mod, facts)
     if id == "L003":
-        return check_l003(path, lines, mod)
+        return check_l003(path, lines, mod, facts)
     return List[Finding]()
 
 
 def lint_source(path: String, source: String) -> List[Finding]:
-    """Every finding for one file, sorted by line."""
+    """Every finding for one file, sorted by line — text only, no compiler."""
+    return lint_with_facts(path, source, Facts())
+
+
+def lint_with_facts(
+    path: String, source: String, facts: Facts
+) -> List[Finding]:
+    """Every finding for one file, sorted by line, using `facts` where the
+    rules have a use for them (`collect_facts` fills them from the LSP)."""
     var lines = logical_lines(source)
     var mod = parse_module(lines)
     var out = List[Finding]()
     for r in rules():
-        for fnd in run_rule(r.id, path, lines, mod):
+        for fnd in run_rule(r.id, path, lines, mod, facts):
             # Insertion by line keeps the output readable without a sort.
             var k = len(out)
             out.append(fnd.copy())
