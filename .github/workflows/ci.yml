@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: ${{ matrix.env == 'default' && 'nightly' || matrix.env }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        env: [default, stable]
+    steps:
+      # The corpus is threads.example's programs, which import `threads`;
+      # `--lsp` mode resolves those imports through `-I ../threads.mojo/src`,
+      # so the sibling is laid out next to this checkout.
+      - uses: actions/checkout@v4
+        with:
+          path: lint.mojo
+
+      - uses: actions/checkout@v4
+        with:
+          repository: magmalake/threads.mojo
+          path: threads.mojo
+
+      - uses: prefix-dev/setup-pixi@v0.10.2
+        with:
+          # Pinned: pixi.lock is written by this version, and pixi changed how
+          # it hashes source dependencies after it, so a newer pixi rejects the
+          # committed lock with "lock file not up-to-date".
+          pixi-version: v0.78.0
+          manifest-path: lint.mojo/pixi.toml
+          environments: ${{ matrix.env }}
+
+      # Unit tests, then the corpus in text mode and in `--lsp` mode. The
+      # latter runs `mojo-lsp-server` from the environment (the `mojo`
+      # package on stable, `modular` on nightly).
+      - name: Unit tests and corpus
+        working-directory: lint.mojo
+        run: pixi run -e ${{ matrix.env }} check

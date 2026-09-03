@@ -1,13 +1,16 @@
 # lint.mojo
 
+[![CI](https://github.com/magmalake/lint.mojo/actions/workflows/ci.yml/badge.svg)](https://github.com/magmalake/lint.mojo/actions/workflows/ci.yml)
+
+Part of [**magmalake**](https://magmalake.org) — data lake building blocks in Mojo.
+
 A proof of concept: a linter for the origin and threading mistakes the Mojo
 compiler accepts and gets wrong — the `uncaught` programs in `threads.example`.
 It reads Mojo as text (logical lines, indentation-recovered functions and
 structs), does no dataflow, and stays silent on the correct programs next to
 those cases. With `--lsp` it asks `mojo-lsp-server` — the compiler's own
 frontend — for the facts the text cannot give: resolved types and name-resolved
-uses. All Mojo, no C++, no compiler build. Local-only; nothing here is
-published.
+uses. All Mojo, no C++, no compiler build.
 
 ## Rules
 
