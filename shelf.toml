@@ -1,0 +1,6 @@
+name = "lint-mojo"
+version = "0.1.0"
+description = "mojolint: a linter for the origin and threading mistakes the Mojo compiler lets through, with mojo-lsp-server behind the rules"
+tags = ["magmalake", "lint", "linter", "origins", "threads", "lsp", "tooling"]
+# other tins this one depends on; omit if none
+tins = []

@@ -1,5 +1,7 @@
 # lint.mojo
 
+[![mojoshelf](https://mojoshelf.org/badge/lint-mojo.svg)](https://mojoshelf.org/tins/lint-mojo) [![mojo nightly](https://mojoshelf.org/badge/lint-mojo/nightly.svg)](https://mojoshelf.org/tins/lint-mojo)
+
 [![CI](https://github.com/magmalake/lint.mojo/actions/workflows/ci.yml/badge.svg)](https://github.com/magmalake/lint.mojo/actions/workflows/ci.yml)
 
 Part of [**magmalake**](https://magmalake.org) — data lake building blocks in Mojo.
@@ -11,6 +13,34 @@ structs), does no dataflow, and stays silent on the correct programs next to
 those cases. With `--lsp` it asks `mojo-lsp-server` — the compiler's own
 frontend — for the facts the text cannot give: resolved types and name-resolved
 uses. All Mojo, no C++, no compiler build.
+
+## Install
+
+```sh
+pixi shelf add lint-mojo
+pixi run mojolint --lsp -I src src/*.mojo
+```
+
+Working with a coding agent? `npx skills add mojoshelf/mojoshelf --skill mojoshelf-consume --yes` teaches it to find and install tins itself — it installs the `shelf` CLI too.
+
+That resolves the tin from [mojoshelf](https://mojoshelf.org) and adds it as a
+**pixi git source dependency**: `pixi install` builds the `mojolint`
+executable into your environment's `bin/`, next to the `mojo-lsp-server` its
+`--lsp` mode runs — so the linter always uses the compiler your project uses.
+magmalake tins are not published to a conda channel, so `pixi add lint-mojo`
+will not find it.
+
+As a dependency declaration, or for a nightly consumer:
+
+```toml
+# pixi.toml
+[dependencies]
+lint-mojo = { git = "https://github.com/magmalake/lint.mojo" }
+```
+
+`mojolint [--lsp] [-I DIR]... FILE...` prints `path:line:col: L00N message`
+and exits 1 on findings. `-I` takes the same source paths as `mojo build` —
+`--lsp` needs them to resolve the file's imports.
 
 ## Rules
 

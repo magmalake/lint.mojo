@@ -2,9 +2,10 @@
 authors = ["Marius S <39998+winding-lines@users.noreply.github.com>"]
 channels = ["https://conda.modular.com/max-nightly", "conda-forge"]
 name = "lint.mojo"
-description = "mojolint — a proof-of-concept source-level linter for the origin and thread-safety patterns the Mojo compiler lets through."
+version = "0.1.0"
+description = "mojolint — a linter for the origin and threading mistakes the Mojo compiler lets through, with mojo-lsp-server behind the rules."
+preview = ["pixi-build"]
 platforms = ["osx-arm64", "linux-64"]
-version = "0.0.1"
 
 [tasks]
 # Lint one or more files: `pixi run lint path/to/file.mojo …`
@@ -18,6 +19,33 @@ test = { cmd = "mkdir -p build && mojo build tests/test_mojolint.mojo -I src -o 
 corpus = { cmd = "bash tests/check.sh" }
 check = { depends-on = ["test", "corpus"] }
 fmt = { cmd = "mojo format src tests/test_mojolint.mojo" }
+
+# ── pixi-build: consumable as a pixi source dependency ──────────────────────
+# A tool tin: `pixi shelf add lint-mojo` builds the `mojolint` executable into
+# the environment's bin/, next to the `mojo-lsp-server` its `--lsp` mode runs.
+# No Mojo package is exported — the rules are not a library.
+[package]
+name = "lint-mojo"
+version = "0.1.0"
+
+[package.build]
+backend = { name = "pixi-build-mojo", version = "0.*" }
+
+[[package.build.config.bins]]
+name = "mojolint"
+path = "src/mojolint/main.mojo"
+extra-args = ["-I", "src"]
+
+[package.host-dependencies]
+mojo-compiler = "==1.0.0"
+
+[package.build-dependencies]
+mojo-compiler = "==1.0.0"
+
+# `mojo`, not `mojo-compiler`: `--lsp` runs `mojo-lsp-server`, which only the
+# `mojo` package ships (the nightly `modular` package provides it too).
+[package.run-dependencies]
+mojo = ">=1.0.0,<2"
 
 [feature.nightly.dependencies]
 modular = ">=26.6.0.dev2026082605,<27"
