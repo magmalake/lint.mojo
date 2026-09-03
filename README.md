@@ -30,6 +30,10 @@ executable into your environment's `bin/`, next to the `mojo-lsp-server` its
 magmalake tins are not published to a conda channel, so `pixi add lint-mojo`
 will not find it.
 
+`mojo-lsp-server` ships in the `mojo` (and `modular`) conda package, not in
+`mojo-compiler`; an environment that depends on `mojo-compiler` alone can run
+`mojolint` in text mode only. `lint-mojo` itself depends on `mojo`.
+
 As a dependency declaration, or for a nightly consumer:
 
 ```toml
