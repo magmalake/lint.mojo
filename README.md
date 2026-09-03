@@ -18,7 +18,7 @@ uses. All Mojo, no C++, no compiler build.
 
 ```sh
 pixi shelf add lint-mojo
-pixi run mojolint --lsp -I src src/*.mojo
+pixi run mojolint --lsp -I src src tests
 ```
 
 Working with a coding agent? `npx skills add mojoshelf/mojoshelf --skill mojoshelf-consume --yes` teaches it to find and install tins itself — it installs the `shelf` CLI too.
@@ -42,9 +42,10 @@ As a dependency declaration, or for a nightly consumer:
 lint-mojo = { git = "https://github.com/magmalake/lint.mojo" }
 ```
 
-`mojolint [--lsp] [-I DIR]... FILE...` prints `path:line:col: L00N message`
-and exits 1 on findings. `-I` takes the same source paths as `mojo build` —
-`--lsp` needs them to resolve the file's imports.
+`mojolint [--lsp] [-I DIR]... PATH...` prints `path:line:col: L00N message`
+and exits 1 on findings. A directory is walked for `.mojo` files (`.pixi`,
+`build` and `shelf` skipped). `-I` takes the same source paths as `mojo build`
+— `--lsp` needs them to resolve the file's imports.
 
 ## Rules
 
@@ -78,7 +79,7 @@ Silence a line with `# lint: allow(L001)` on it or on the line above.
 
 ## `--lsp`: the compiler's facts behind the same rules
 
-`mojolint --lsp [-I DIR]... FILE` runs `mojo-lsp-server` once per file (it
+`mojolint --lsp [-I DIR]... PATH` runs `mojo-lsp-server` once per file (it
 ships in the `mojo` conda package, stable and nightly) and feeds three kinds of
 fact into the rules:
 
@@ -137,12 +138,12 @@ the compiler for.
 
 Each positive fires exactly its `# lint-expect:` set, in text mode and in
 `--lsp` mode; in `--lsp` mode `untracked_ctx_drops_early` additionally reports
-the call site. 14/14 corpus and 21/21 unit tests on Mojo 1.0.0 stable and on
+the call site. 14/14 corpus and 22/22 unit tests on Mojo 1.0.0 stable and on
 nightly.
 
     pixi run check                      # unit tests + corpus, both modes (nightly); -e stable for 1.0.0
-    pixi run lint FILE.mojo ...         # path:line:col: L00N message; exit 1 on findings
-    pixi run lint-lsp -I DIR FILE.mojo  # same, with mojo-lsp-server behind the rules
+    pixi run lint PATH ...              # path:line:col: L00N message; exit 1 on findings
+    pixi run lint-lsp -I DIR PATH ...   # same, with mojo-lsp-server behind the rules
     pixi run fmt                        # nightly only; stable ships no formatter
 
 ## Three tiers toward `shelf lint`

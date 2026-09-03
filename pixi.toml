@@ -2,7 +2,7 @@
 authors = ["Marius S <39998+winding-lines@users.noreply.github.com>"]
 channels = ["https://conda.modular.com/max-nightly", "conda-forge"]
 name = "lint.mojo"
-version = "0.1.0"
+version = "0.1.1"
 description = "mojolint — a linter for the origin and threading mistakes the Mojo compiler lets through, with mojo-lsp-server behind the rules."
 preview = ["pixi-build"]
 platforms = ["osx-arm64", "linux-64"]
@@ -10,7 +10,7 @@ platforms = ["osx-arm64", "linux-64"]
 [tasks]
 # Lint one or more files: `pixi run lint path/to/file.mojo …`
 lint = { cmd = "mkdir -p build && mojo build src/mojolint/main.mojo -I src -o build/mojolint && ./build/mojolint" }
-# Same, with `mojo-lsp-server` behind the rules: `pixi run lint-lsp -I DIR FILE …`
+# Same, with `mojo-lsp-server` behind the rules: `pixi run lint-lsp -I DIR PATH …`
 lint-lsp = { cmd = "mkdir -p build && mojo build src/mojolint/main.mojo -I src -o build/mojolint && ./build/mojolint --lsp" }
 # Unit tests for the tokenizer and the rule matchers.
 test = { cmd = "mkdir -p build && mojo build tests/test_mojolint.mojo -I src -o build/mojolint-test && ./build/mojolint-test" }
@@ -26,7 +26,7 @@ fmt = { cmd = "mojo format src tests/test_mojolint.mojo" }
 # No Mojo package is exported — the rules are not a library.
 [package]
 name = "lint-mojo"
-version = "0.1.0"
+version = "0.1.1"
 
 [package.build]
 backend = { name = "pixi-build-mojo", version = "0.*" }
