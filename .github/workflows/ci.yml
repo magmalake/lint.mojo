@@ -42,3 +42,70 @@ jobs:
       - name: Unit tests and corpus
         working-directory: lint.mojo
         run: pixi run -e ${{ matrix.env }} check
+
+  # Consumers install this tin as a source dependency, so `mojolint` is built
+  # on whatever machine builds their environment — and that environment is then
+  # cached and restored on other machines. `mojo build` targets the host CPU by
+  # default, so a binary built on an AVX-512 runner and restored on one without
+  # it died with `Illegal instruction`. The manifest pins `--target-cpu` to a
+  # baseline; this job proves the pin reached the packaged binary.
+  portable:
+    name: portable binary / ubuntu-latest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: lint.mojo
+
+      - uses: prefix-dev/setup-pixi@v0.10.2
+        with:
+          pixi-version: v0.78.0
+          manifest-path: lint.mojo/pixi.toml
+          environments: stable
+
+      # The tin, built the way a consumer's `pixi install` builds it.
+      - name: Build the tin
+        working-directory: lint.mojo
+        run: pixi build --output-dir dist
+
+      # The linux-64 floor is x86-64-v2, which has no VEX encoding at all: any
+      # `ymm` (AVX) or `zmm` (AVX-512) register in the disassembly means the
+      # pin stopped taking effect and the binary is host-specific again.
+      - name: mojolint is CPU-portable and runs
+        working-directory: lint.mojo
+        run: |
+          set -euo pipefail
+          for tool in objdump unzip zstd; do
+            command -v "$tool" >/dev/null && continue
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq binutils unzip zstd
+            break
+          done
+
+          conda=$(find dist -name 'lint-mojo-*.conda' | head -1)
+          echo "package: $conda"
+          rm -rf /tmp/tin && mkdir -p /tmp/tin
+          unzip -q -o "$conda" -d /tmp/tin
+          tar --zstd -xf /tmp/tin/pkg-lint-mojo-*.tar.zst -C /tmp/tin
+          # `$ORIGIN/../lib` is where the binary looks for
+          # libKGENCompilerRTShared.so; point it at the environment that ships
+          # it, the way an installed tin sits next to its run-dependencies.
+          ln -sfn "$PWD/.pixi/envs/stable/lib" /tmp/tin/lib
+
+          echo "runner CPU: $( (grep -m1 '^flags' /proc/cpuinfo | tr ' ' '\n' | grep -xE 'avx|avx2|avx512f' | tr '\n' ' ') || echo 'no avx')"
+          objdump -d /tmp/tin/bin/mojolint > /tmp/mojolint.S
+          status=0
+          for reg in zmm ymm; do
+            n=$(grep -c "%$reg" /tmp/mojolint.S || true)
+            echo "%$reg uses: $n"
+            if [ "$n" != 0 ]; then
+              echo "::error::mojolint uses %$reg registers — the --target-cpu pin is not reaching the build"
+              grep -m5 "%$reg" /tmp/mojolint.S
+              status=1
+            fi
+          done
+          [ "$status" = 0 ] || exit 1
+
+          # And it runs here: the linter over its own sources, which are clean.
+          /tmp/tin/bin/mojolint src
+          echo "mojolint ran and reported no findings"
