@@ -2,7 +2,7 @@
 authors = ["Marius S <39998+winding-lines@users.noreply.github.com>"]
 channels = ["https://conda.modular.com/max-nightly", "conda-forge"]
 name = "lint.mojo"
-version = "0.1.1"
+version = "0.1.2"
 description = "mojolint — a linter for the origin and threading mistakes the Mojo compiler lets through, with mojo-lsp-server behind the rules."
 preview = ["pixi-build"]
 platforms = ["osx-arm64", "linux-64"]
@@ -26,15 +26,37 @@ fmt = { cmd = "mojo format src tests/test_mojolint.mojo" }
 # No Mojo package is exported — the rules are not a library.
 [package]
 name = "lint-mojo"
-version = "0.1.1"
+version = "0.1.2"
 
 [package.build]
 backend = { name = "pixi-build-mojo", version = "0.*" }
 
+# `mojo build` defaults `--target-cpu`/`--target-features` to the *host* CPU,
+# and a consumer's environment — the built binary in it — gets cached and
+# replayed on other machines: GitHub's `ubuntu-latest` pool mixes AVX-512 and
+# non-AVX-512 hosts, so a `mojolint` built on one and restored from cache on
+# another died with `Illegal instruction`. Pin a baseline CPU instead, and pin
+# the features too, since those otherwise default to the host's independently
+# of `--target-cpu`. The `=` form is deliberate: the backend splices these
+# args into a shell command line, where a separate empty `""` would vanish.
+#
+# `bins` is *overwritten* — not merged — by a `target.<platform>` block, so
+# each block repeats `name` and `path`. Platforms without a block fall through
+# to this one; `generic` is the right floor for arm64 but is rejected by the
+# x86 backend, so any x86 platform added to `workspace.platforms` needs its
+# own block alongside `linux-64` below.
 [[package.build.config.bins]]
 name = "mojolint"
 path = "src/mojolint/main.mojo"
-extra-args = ["-I", "src"]
+extra-args = ["-I", "src", "--target-cpu=generic", "--target-features="]
+
+# x86-64-v2 (SSE4.2 + POPCNT, Nehalem 2008 / Bulldozer 2011) is the floor: no
+# VEX, so no `ymm`/`zmm` in the output, and every CI runner and every machine
+# of the last decade executes it.
+[[package.build.target.linux-64.config.bins]]
+name = "mojolint"
+path = "src/mojolint/main.mojo"
+extra-args = ["-I", "src", "--target-cpu=x86-64-v2", "--target-features="]
 
 [package.host-dependencies]
 mojo-compiler = "==1.0.0"
