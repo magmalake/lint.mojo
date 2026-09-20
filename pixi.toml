@@ -59,21 +59,21 @@ path = "src/mojolint/main.mojo"
 extra-args = ["-I", "src", "--target-cpu=x86-64-v2", "--target-features="]
 
 [package.host-dependencies]
-mojo-compiler = "==1.0.0"
+mojo-compiler = "==1.1.0"
 
 [package.build-dependencies]
-mojo-compiler = "==1.0.0"
+mojo-compiler = "==1.1.0"
 
 # `mojo`, not `mojo-compiler`: `--lsp` runs `mojo-lsp-server`, which only the
 # `mojo` package ships (the nightly `modular` package provides it too).
 [package.run-dependencies]
-mojo = ">=1.0.0,<2"
+mojo = ">=1.1.0,<2"
 
 [feature.nightly.dependencies]
-modular = ">=26.6.0.dev2026082605,<27"
+modular = ">=26.7.0.dev2026092005,<28"
 
 [feature.stable.dependencies]
-mojo = "==1.0.0"
+mojo = "==1.1.0"
 
 [environments]
 default = ["nightly"]
