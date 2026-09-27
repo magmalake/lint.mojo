@@ -138,10 +138,10 @@ the compiler for.
 
 Each positive fires exactly its `# lint-expect:` set, in text mode and in
 `--lsp` mode; in `--lsp` mode `untracked_ctx_drops_early` additionally reports
-the call site. 14/14 corpus and 22/22 unit tests on Mojo 1.0.0 stable and on
+the call site. The corpus and the unit tests run on Mojo 1.1.0 stable and on
 nightly.
 
-    pixi run check                      # unit tests + corpus, both modes (nightly); -e stable for 1.0.0
+    pixi run check                      # unit tests + corpus, both modes (nightly); -e stable for 1.1.0
     pixi run lint PATH ...              # path:line:col: L00N message; exit 1 on findings
     pixi run lint-lsp -I DIR PATH ...   # same, with mojo-lsp-server behind the rules
     pixi run fmt                        # nightly only; stable ships no formatter
