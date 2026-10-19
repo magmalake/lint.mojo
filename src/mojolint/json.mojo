@@ -229,7 +229,7 @@ struct _Parser[origin: Origin[mut=False]]:
                 return node
         if c == 34:
             var s = self._string()
-            return self._push(STRING, s^)
+            return self._push(STRING, s)
         if c == 116 and self._word("true"):
             return self._push(BOOL, "true")
         if c == 102 and self._word("false"):
@@ -255,7 +255,7 @@ struct _Parser[origin: Origin[mut=False]]:
             self._fail("unexpected character")
         var text = String(StringSlice(unsafe_from_utf8=self.b[self.i : j]))
         self.i = j
-        return self._push(NUMBER, text^)
+        return self._push(NUMBER, text)
 
     def finish(deinit self) -> JsonDoc:
         return self.doc^
