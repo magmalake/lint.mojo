@@ -150,32 +150,37 @@ struct _Parser[origin: Origin[mut=False]]:
                     self._fail("truncated escape")
                 var e = self.b[self.i]
                 self.i += 1
-                if e == 110:
-                    out += "\n"
-                elif e == 116:
-                    out += "\t"
-                elif e == 114:
-                    out += "\r"
-                elif e == 98:
-                    out += "\b"
-                elif e == 102:
-                    out += "\f"
-                elif e == 117:
-                    var cp = self._hex4()
-                    if cp >= 0xD800 and cp < 0xDC00:
-                        # A surrogate pair: `😀`.
-                        if (
-                            self.i + 1 < len(self.b)
-                            and self.b[self.i] == 92
-                            and self.b[self.i + 1] == 117
-                        ):
-                            self.i += 2
-                            var lo = self._hex4()
-                            cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00)
-                    out += String(Codepoint.from_u32(UInt32(cp)).value())
-                else:
-                    # `\"`, `\\`, `\/`
-                    out += String(chr(Int(e)))
+                match e:
+                    case 110:
+                        out += "\n"
+                    case 116:
+                        out += "\t"
+                    case 114:
+                        out += "\r"
+                    case 98:
+                        out += "\b"
+                    case 102:
+                        out += "\f"
+                    case 117:
+                        var cp = self._hex4()
+                        if cp >= 0xD800 and cp < 0xDC00:
+                            # A surrogate pair: `😀`.
+                            if (
+                                self.i + 1 < len(self.b)
+                                and self.b[self.i] == 92
+                                and self.b[self.i + 1] == 117
+                            ):
+                                self.i += 2
+                                var lo = self._hex4()
+                                cp = (
+                                    0x10000
+                                    + ((cp - 0xD800) << 10)
+                                    + (lo - 0xDC00)
+                                )
+                        out += String(Codepoint.from_u32(UInt32(cp)).value())
+                    case _:
+                        # `\"`, `\\`, `\/`
+                        out += String(chr(Int(e)))
                 continue
             # Copy a run of plain bytes at once.
             var j = self.i
@@ -290,28 +295,29 @@ def json_quote(text: String) -> String:
     var i = 0
     while i < len(b):
         var c = b[i]
-        if c == 34:
-            out += '\\"'
-        elif c == 92:
-            out += "\\\\"
-        elif c == 10:
-            out += "\\n"
-        elif c == 13:
-            out += "\\r"
-        elif c == 9:
-            out += "\\t"
-        elif c < 32:
-            out += "\\u00"
-            out += digits[byte=Int(c >> 4)]
-            out += digits[byte=Int(c & 15)]
-        else:
-            # A run of bytes that pass through unchanged, UTF-8 included.
-            var j = i
-            while j < len(b) and b[j] >= 32 and b[j] != 34 and b[j] != 92:
-                j += 1
-            out += StringSlice(unsafe_from_utf8=b[i:j])
-            i = j
-            continue
+        match c:
+            case 34:
+                out += '\\"'
+            case 92:
+                out += "\\\\"
+            case 10:
+                out += "\\n"
+            case 13:
+                out += "\\r"
+            case 9:
+                out += "\\t"
+            case k if k < 32:
+                out += "\\u00"
+                out += digits[byte=Int(c >> 4)]
+                out += digits[byte=Int(c & 15)]
+            case _:
+                # A run of bytes that pass through unchanged, UTF-8 included.
+                var j = i
+                while j < len(b) and b[j] >= 32 and b[j] != 34 and b[j] != 92:
+                    j += 1
+                out += StringSlice(unsafe_from_utf8=b[i:j])
+                i = j
+                continue
         i += 1
     out += '"'
     return out^
