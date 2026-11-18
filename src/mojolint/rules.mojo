@@ -9,7 +9,6 @@ from .structure import (
     Func,
     Module,
     Param,
-    Struct,
     has_local,
     locals_of,
     parse_module,
