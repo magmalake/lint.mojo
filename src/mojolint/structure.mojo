@@ -205,7 +205,7 @@ def parse_module(lines: List[Line]) -> Module:
                     continue
                 if len(m.words) >= 2 and m.words[0] == "var":
                     var type = String()
-                    var colon = m.code.find(":")
+                    var colon = m.code.find(":").or_else(-1)
                     if colon >= 0:
                         type = String(
                             String(m.code[byte = colon + 1 :]).strip()

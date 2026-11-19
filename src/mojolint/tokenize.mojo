@@ -73,7 +73,7 @@ def handed_whole(code: String, name: String) -> Bool:
     var m = name.byte_length()
     var i = 0
     while i + m <= n:
-        var at = code.find(name, i)
+        var at = code.find(name, i).or_else(-1)
         if at < 0:
             return False
         i = at + m
@@ -122,11 +122,11 @@ def words_of(code: String) -> List[String]:
 def _allow_codes(comment: String) -> List[String]:
     """Rule ids in a `lint: allow(L001, L002)` comment; empty otherwise."""
     var out = List[String]()
-    var at = comment.find("lint: allow(")
+    var at = comment.find("lint: allow(").or_else(-1)
     if at < 0:
         return out^
     var rest = String(comment[byte = at + 12 :])
-    var close = rest.find(")")
+    var close = rest.find(")").or_else(-1)
     if close < 0:
         return out^
     for part in String(rest[byte=0:close]).split(","):

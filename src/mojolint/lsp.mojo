@@ -167,10 +167,10 @@ def split_frames(stream: String) -> List[String]:
     var out = List[String]()
     var pos = 0
     while True:
-        var at = stream.find("Content-Length:", pos)
+        var at = stream.find("Content-Length:", pos).or_else(-1)
         if at < 0:
             break
-        var eol = stream.find("\n", at)
+        var eol = stream.find("\n", at).or_else(-1)
         if eol < 0:
             break
         var n: Int
@@ -181,7 +181,7 @@ def split_frames(stream: String) -> List[String]:
         # Skip the header block: a blank line ends it.
         var body = eol + 1
         while body < stream.byte_length():
-            var next_eol = stream.find("\n", body)
+            var next_eol = stream.find("\n", body).or_else(-1)
             if next_eol < 0:
                 next_eol = stream.byte_length()
             var header = String(stream[byte=body:next_eol]).strip()
@@ -283,7 +283,7 @@ struct LspReplies(Movable):
 def hover_type(text: String) -> String:
     """The type in a hover line: everything after the first `: ` of
     `(variable) var t: Pointer[T, MutUntrackedOrigin]`; empty if none."""
-    var at = text.find(": ")
+    var at = text.find(": ").or_else(-1)
     if at < 0:
         return String()
     return String(text[byte = at + 2 :])
@@ -291,7 +291,7 @@ def hover_type(text: String) -> String:
 
 def hover_signature(text: String) -> String:
     """The `def ...` of a `(function) def f(...)` hover line; empty if none."""
-    var at = text.find("def ")
+    var at = text.find("def ").or_else(-1)
     if at < 0:
         return String()
     return String(text[byte=at:])

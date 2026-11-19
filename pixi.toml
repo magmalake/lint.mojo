@@ -59,22 +59,19 @@ path = "src/mojolint/main.mojo"
 extra-args = ["-I", "src", "--target-cpu=x86-64-v2", "--target-features="]
 
 [package.host-dependencies]
-mojo-compiler = "==1.2.0"
+mojo-compiler = "==1.3.0.dev2026111805"
 
 [package.build-dependencies]
-mojo-compiler = "==1.2.0"
+mojo-compiler = "==1.3.0.dev2026111805"
 
 # `mojo`, not `mojo-compiler`: `--lsp` runs `mojo-lsp-server`, which only the
-# `mojo` package ships (the nightly `modular` package provides it too).
+# `mojo` package ships.
 [package.run-dependencies]
-mojo = ">=1.2.0,<2"
+mojo = "==1.3.0.dev2026111805"
 
-[feature.nightly.dependencies]
-modular = ">=26.8.0.dev2026102305,<28"
-
-[feature.stable.dependencies]
-mojo = "==1.2.0"
-
-[environments]
-default = ["nightly"]
-stable = ["stable"]
+# One toolchain: the tin, its tests and every consumer use the same Mojo
+# nightly, pinned exactly here and in [package] above; the pin moves across all
+# magmalake tins together. `mojo` (not just `mojo-compiler`) for the
+# `mojo-lsp-server` the `--lsp` mode and the corpus run, and for `mojo format`.
+[dependencies]
+mojo = "==1.3.0.dev2026111805"
