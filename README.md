@@ -30,11 +30,11 @@ executable into your environment's `bin/`, next to the `mojo-lsp-server` its
 magmalake tins are not published to a conda channel, so `pixi add lint-mojo`
 will not find it.
 
-`mojo-lsp-server` ships in the `mojo` (and `modular`) conda package, not in
+`mojo-lsp-server` ships in the `mojo` conda package, not in
 `mojo-compiler`; an environment that depends on `mojo-compiler` alone can run
 `mojolint` in text mode only. `lint-mojo` itself depends on `mojo`.
 
-As a dependency declaration, or for a nightly consumer:
+As a dependency declaration:
 
 ```toml
 # pixi.toml
@@ -80,7 +80,7 @@ Silence a line with `# lint: allow(L001)` on it or on the line above.
 ## `--lsp`: the compiler's facts behind the same rules
 
 `mojolint --lsp [-I DIR]... PATH` runs `mojo-lsp-server` once per file (it
-ships in the `mojo` conda package, stable and nightly) and feeds three kinds of
+ships in the `mojo` conda package) and feeds three kinds of
 fact into the rules:
 
 | fact | LSP request | replaces |
@@ -138,13 +138,13 @@ the compiler for.
 
 Each positive fires exactly its `# lint-expect:` set, in text mode and in
 `--lsp` mode; in `--lsp` mode `untracked_ctx_drops_early` additionally reports
-the call site. The corpus and the unit tests run on Mojo 1.2.0 stable and on
-nightly.
+the call site. The corpus and the unit tests run on the pinned Mojo nightly,
+1.3.0.dev2026111805.
 
-    pixi run check                      # unit tests + corpus, both modes (nightly); -e stable for 1.2.0
+    pixi run check                      # unit tests + corpus, both modes
     pixi run lint PATH ...              # path:line:col: L00N message; exit 1 on findings
     pixi run lint-lsp -I DIR PATH ...   # same, with mojo-lsp-server behind the rules
-    pixi run fmt                        # nightly only; stable ships no formatter
+    pixi run fmt                        # mojo format over src and the tests
 
 ## Three tiers toward `shelf lint`
 

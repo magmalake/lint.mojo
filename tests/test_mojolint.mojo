@@ -72,10 +72,10 @@ def test_bracketed_continuations_join_into_one_line() raises:
     assert_equal(lines[1].code, "foo( a, [b, c], )")
     assert_equal(lines[2].lineno, 6)
     # Offsets into the joined code map back to the physical line they sit on.
-    var foo = lines[1].locate(lines[1].code.find("foo"))
+    var foo = lines[1].locate(lines[1].code.find("foo").or_else(-1))
     assert_equal(foo[0], 2)
     assert_equal(foo[1], 5)
-    var c = lines[1].locate(lines[1].code.find("c]"))
+    var c = lines[1].locate(lines[1].code.find("c]").or_else(-1))
     assert_equal(c[0], 4)
     assert_equal(c[1], 13)
 
@@ -298,7 +298,7 @@ def test_l001_with_facts_catches_erasure_through_a_helper() raises:
     var f = lint_with_facts("x.mojo", src, facts)
     assert_equal(_ids(f), "L001")
     assert_equal(f[0].line, 5)
-    assert_true(f[0].message.find("`ctx: OpaquePtr`") >= 0)
+    assert_true("`ctx: OpaquePtr`" in f[0].message)
     # Text mode cannot see through the helper.
     assert_equal(_ids(lint_source("x.mojo", src)), "")
 

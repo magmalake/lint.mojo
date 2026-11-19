@@ -186,7 +186,7 @@ struct _Parser[origin: Origin[mut=False]]:
             var j = self.i
             while j < len(self.b) and self.b[j] != 34 and self.b[j] != 92:
                 j += 1
-            out += String(StringSlice(unsafe_from_utf8=self.b[self.i : j]))
+            out += String(StringSpan(unsafe_from_utf8=self.b[self.i : j]))
             self.i = j
 
     def _value(mut self) raises -> Int:
@@ -258,7 +258,7 @@ struct _Parser[origin: Origin[mut=False]]:
             j += 1
         if j == self.i:
             self._fail("unexpected character")
-        var text = String(StringSlice(unsafe_from_utf8=self.b[self.i : j]))
+        var text = String(StringSpan(unsafe_from_utf8=self.b[self.i : j]))
         self.i = j
         return self._push(NUMBER, text)
 
@@ -315,7 +315,7 @@ def json_quote(text: String) -> String:
                 var j = i
                 while j < len(b) and b[j] >= 32 and b[j] != 34 and b[j] != 92:
                     j += 1
-                out += StringSlice(unsafe_from_utf8=b[i:j])
+                out += StringSpan(unsafe_from_utf8=b[i:j])
                 i = j
                 continue
         i += 1

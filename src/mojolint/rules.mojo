@@ -103,7 +103,7 @@ def _pointer_to_targets(code: String) -> List[String]:
     var out = List[String]()
     var pos = 0
     while True:
-        var at = code.find("Pointer(to=", pos)
+        var at = code.find("Pointer(to=", pos).or_else(-1)
         if at < 0:
             break
         var start = at + 11
@@ -120,9 +120,9 @@ def _pointer_to_targets(code: String) -> List[String]:
 def _erases_to_untracked(code: String) -> Bool:
     """Does the line build an untracked pointer or an opaque pointer?"""
     return (
-        code.find("MutUntrackedOrigin") >= 0
-        or code.find("OpaquePtr(") >= 0
-        or code.find("opaque_ptr(") >= 0
+        "MutUntrackedOrigin" in code
+        or "OpaquePtr(" in code
+        or "opaque_ptr(" in code
     )
 
 
@@ -184,7 +184,7 @@ def _is_field_path(text: String) -> Bool:
 
 def _where(line: Line, needle: String) -> Tuple[Int, Int]:
     """The physical line and 1-based column of `needle` in `line`."""
-    var at = line.code.find(needle)
+    var at = line.code.find(needle).or_else(-1)
     return line.locate(at if at >= 0 else 0)
 
 
@@ -202,7 +202,7 @@ def _line_at(lines: List[Line], f: Func, at: Pos) -> Int:
 
 def _base_type(type: String) -> String:
     """`Ctx[Totals]` → `Ctx`; `Pointer[T, O]` → `Pointer`."""
-    var at = type.find("[")
+    var at = type.find("[").or_else(-1)
     return String(type[byte=0:at]) if at >= 0 else type
 
 
@@ -232,7 +232,7 @@ def _untracked_type(type: String, mod: Module, facts: Facts) -> Bool:
 
     `Pointer[T, MutUntrackedOrigin]` and `OpaquePtr` are; so is a struct such
     as `Ctx[T]` whose fields (resolved when the facts have them) are."""
-    if type.find("UntrackedOrigin") >= 0 or type.find("OpaquePtr") >= 0:
+    if "UntrackedOrigin" in type or "OpaquePtr" in type:
         return True
     var s = mod.struct_named(_base_type(type))
     if not s:
@@ -241,7 +241,7 @@ def _untracked_type(type: String, mod: Module, facts: Facts) -> Bool:
         var ft = facts.field_type(s.value(), fld.name)
         if ft.byte_length() == 0:
             ft = fld.type
-        if ft.find("UntrackedOrigin") >= 0 or ft.find("OpaquePtr") >= 0:
+        if "UntrackedOrigin" in ft or "OpaquePtr" in ft:
             return True
     return False
 
@@ -302,7 +302,7 @@ def check_l001(
                     and is_local
                     and (
                         _erases_to_untracked(line.code)
-                        or line.code.find("Int(Pointer(to=" + name + ")") >= 0
+                        or "Int(Pointer(to=" + name + ")" in line.code
                     )
                     and not used_after(lines, f, j, name)
                 ):
@@ -324,7 +324,7 @@ def check_l001(
             for target in _pointer_to_targets(line.code):
                 if target == name and (
                     _erases_to_untracked(line.code)
-                    or line.code.find("Int(Pointer(to=" + name + ")") >= 0
+                    or "Int(Pointer(to=" + name + ")" in line.code
                 ):
                     erased = True
             # `var y = f(x)` where `y` resolves to an untracked pointer: `x`
@@ -391,7 +391,7 @@ def check_l002(
             if type.byte_length() == 0:
                 type = fld.type
             if not (
-                type.find("Pointer[") >= 0 and type.find("UntrackedOrigin") >= 0
+                "Pointer[" in type and "UntrackedOrigin" in type
             ):
                 continue
             for f in mod.funcs:
@@ -408,7 +408,7 @@ def check_l002(
                         if (
                             len(l.words) >= 2
                             and l.words[0] == "var"
-                            and l.code.find("= " + s.name + "(") >= 0
+                            and "= " + s.name + "(" in l.code
                         ):
                             owners.append(l.words[1])
                 for j in range(f.body_start, f.body_end):
@@ -417,7 +417,7 @@ def check_l002(
                         continue
                     for owner in owners:
                         var needle = owner + "." + fld.name + "[]"
-                        if l.code.find(needle) < 0:
+                        if needle not in l.code:
                             continue
                         if facts.available:
                             var last = facts.last_use(f, owner)
@@ -467,7 +467,7 @@ def _task_shape(params: List[Param], facts: Facts) -> String:
     if params[1].conv == "mut":
         return String("typed")
     var t = params[1].type
-    if t == "OpaquePtr" or (facts.available and t.find("UntrackedOrigin") >= 0):
+    if t == "OpaquePtr" or (facts.available and "UntrackedOrigin" in t):
         return String("opaque")
     return String()
 
@@ -496,7 +496,7 @@ def check_l003(
             if target.byte_length() == 0:
                 continue
             var prefix = state + "."
-            var deref = target.find("[].")
+            var deref = target.find("[].").or_else(-1)
             var cut = -1
             if shape == "typed" and target.startswith(prefix):
                 cut = prefix.byte_length()
