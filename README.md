@@ -1,6 +1,6 @@
 # lint.mojo
 
-[![mojoshelf](https://mojoshelf.org/badge/lint-mojo.svg)](https://mojoshelf.org/tins/lint-mojo) [![mojo nightly](https://mojoshelf.org/badge/lint-mojo/nightly.svg)](https://mojoshelf.org/tins/lint-mojo)
+[![mojoshelf](https://mojoshelf.org/badge/lint-mojo.svg)](https://mojoshelf.org/tins/lint-mojo) [![mojo nightly](https://mojoshelf.org/badge/lint-mojo/nightly.svg)](https://mojoshelf.org/tins/lint-mojo) [![Used by](https://mojourney.dev/badge/magmalake/lint.mojo/used-by.svg)](https://mojourney.dev/repos/magmalake/lint.mojo#used-by) [![Mojo version](https://mojourney.dev/badge/magmalake/lint.mojo/mojo.svg)](https://mojourney.dev/repos/magmalake/lint.mojo)
 
 [![CI](https://github.com/magmalake/lint.mojo/actions/workflows/ci.yml/badge.svg)](https://github.com/magmalake/lint.mojo/actions/workflows/ci.yml)
 
