@@ -139,7 +139,7 @@ the compiler for.
 Each positive fires exactly its `# lint-expect:` set, in text mode and in
 `--lsp` mode; in `--lsp` mode `untracked_ctx_drops_early` additionally reports
 the call site. The corpus and the unit tests run on the pinned Mojo nightly,
-1.3.0.dev2026111805.
+1.3.0.dev2026112505.
 
     pixi run check                      # unit tests + corpus, both modes
     pixi run lint PATH ...              # path:line:col: L00N message; exit 1 on findings
