@@ -38,7 +38,7 @@ jobs:
       # is the check (the corpus check needs a sibling checkout (../threads.mojo)).
       task: ""
       # The compiler the scratch consumer pins: the tin's own.
-      mojo-compiler: "==1.3.0.dev2026112505"
+      mojo-compiler: "==1.3.0.dev2026112605"
 
   test:
     needs: release
